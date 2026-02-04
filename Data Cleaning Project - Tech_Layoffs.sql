@@ -1,237 +1,267 @@
-SELECT *
-FROM layoffs;
+-- Data Cleaning in SQL
+-- https://www.kaggle.com/datasets/swaptr/layoffs-2022
 
--- 1. Remove Duplicates
--- 2. Standardize the Data
--- 3. Null Values or blank values
--- 4. Remove Any Columns
-
-CREATE TABLE layoffs_staging
-LIKE layoffs;
-
-SELECT *
-FROM layoffs_staging;
-
-INSERT layoffs_staging
 SELECT * 
-FROM layoffs;
+FROM world_layoffs.layoffs;
 
-SELECT *,
-ROW_NUMBER() OVER(PARTITION BY company, industry, total_laid_off, 
-percentage_laid_off, `date`) AS row_num
-FROM layoffs_staging;
+-- First, we create a raw table to work in and clean the data. 
+CREATE TABLE world_layoffs.layoffs_staging 
+LIKE world_layoffs.layoffs;
 
-WITH duplicate_cte as
+INSERT layoffs_staging 
+SELECT * FROM world_layoffs.layoffs;
+
+
+-- 1. Removing Duplicates
+-- Checking for duplicates
+
+SELECT *
+FROM world_layoffs.layoffs_staging
+;
+
+SELECT company, industry, total_laid_off,`date`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off,`date`) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging;
+
+SELECT *
+FROM (
+	SELECT company, industry, total_laid_off,`date`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off,`date`
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1;
+
+    
+-- Checking Company 'Oda' for duplicates
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE company = 'Oda'
+;
+-- We found that these are all legitimate entries and shouldn't be deleted. To be accurate we need to check every single row
+
+-- The code below shows us are our real duplicates 
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1;
+
+-- Where the row number is > 1 we have duplicates so we will want to delete
+
+WITH DELETE_CTE AS 
 (
-SELECT *,
-ROW_NUMBER() OVER(PARTITION BY company, location, industry, total_laid_off, 
-percentage_laid_off, `date`, stage, country, funds_raised_millions) AS row_num
-FROM layoffs_staging
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1
 )
-SELECT *
-FROM duplicate_cte
-WHERE row_num >1;
-
-SELECT *
-FROM layoffs_staging
-WHERE company = 'Casper';
-
-CREATE TABLE `layoffs_staging2` (
-  `company` text,
-  `location` text,
-  `industry` text,
-  `total_laid_off` int DEFAULT NULL,
-  `percentage_laid_off` text,
-  `date` text,
-  `stage` text,
-  `country` text,
-  `funds_raised_millions` int DEFAULT NULL,
-  `row_num1` INT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-
-DELETE 
-FROM duplicate_cte
-WHERE row_num > 1;
-
-SELECT *
-FROM layoffs_staging2;
-
-INSERT INTO layoffs_staging2
-SELECT *,
-ROW_NUMBER() OVER(PARTITION BY company, location, industry, total_laid_off, 
-percentage_laid_off, `date`, stage, country, funds_raised_millions) AS row_num1
-FROM layoffs_staging;
-
 DELETE
-FROM layoffs_staging2
-WHERE row_num1 > 1;
+FROM DELETE_CTE
+;
+
+
+WITH DELETE_CTE AS (
+	SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, 
+    ROW_NUMBER() OVER (PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions) AS row_num
+	FROM world_layoffs.layoffs_staging
+)
+DELETE FROM world_layoffs.layoffs_staging
+WHERE (company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, row_num) IN (
+	SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, row_num
+	FROM DELETE_CTE
+) AND row_num > 1;
+
+-- We can create a new column and add row numbers in. Then, we can delete where row numbers are over 2 and delete that column
+
+ALTER TABLE world_layoffs.layoffs_staging ADD row_num INT;
 
 SELECT *
-FROM layoffs_staging2;
+FROM world_layoffs.layoffs_staging
+;
 
--- Standardizing data
+CREATE TABLE `world_layoffs`.`layoffs_staging2` (
+`company` text,
+`location`text,
+`industry`text,
+`total_laid_off` INT,
+`percentage_laid_off` text,
+`date` text,
+`stage`text,
+`country` text,
+`funds_raised_millions` int,
+row_num INT
+);
 
-SELECT company, TRIM(company)
-FROM layoffs_staging2;
+INSERT INTO `world_layoffs`.`layoffs_staging2`
+(`company`,
+`location`,
+`industry`,
+`total_laid_off`,
+`percentage_laid_off`,
+`date`,
+`stage`,
+`country`,
+`funds_raised_millions`,
+`row_num`)
+SELECT `company`,
+`location`,
+`industry`,
+`total_laid_off`,
+`percentage_laid_off`,
+`date`,
+`stage`,
+`country`,
+`funds_raised_millions`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging;
 
-UPDATE layoffs_staging2
-SET company = TRIM(company);
+-- Now, we can delete rows were row_num > 2
 
+DELETE FROM world_layoffs.layoffs_staging2
+WHERE row_num >= 2;
+
+-- 2. Standardizing Data
+
+SELECT * 
+FROM world_layoffs.layoffs_staging2;
+
+-- The industry column looks like they have some null and empty rows
 SELECT DISTINCT industry
-FROM layoffs_staging2
-ORDER BY 1;
+FROM world_layoffs.layoffs_staging2
+ORDER BY industry;
 
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+-- Checking the Company 'Bally'
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE company LIKE 'Bally%';
+
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE company LIKE 'airbnb%';
+
+-- Setting the blanks to nulls as they are easier to work with
+UPDATE world_layoffs.layoffs_staging2
+SET industry = NULL
+WHERE industry = '';
+
+-- Checking to see if the industry column is updated
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+-- Applying Joins so that we can populate those nulls if possible
+UPDATE layoffs_staging2 t1
+JOIN layoffs_staging2 t2
+ON t1.company = t2.company
+SET t1.industry = t2.industry
+WHERE t1.industry IS NULL
+AND t2.industry IS NOT NULL;
+
+-- We see that it looks like Bally's was the only one without a populated row to populate this null values
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE industry IS NULL 
+OR industry = ''
+ORDER BY industry;
+
+-- We see that the Industry 'Crypto' has multiple different variations. We are going to set all the different variations
+-- to Crypto
+SELECT DISTINCT industry
+FROM world_layoffs.layoffs_staging2
+ORDER BY industry;
+
+-- Now, updating the Industry 'Crypto' 
 UPDATE layoffs_staging2
 SET industry = 'Crypto'
-WHERE industry LIKE 'Crypto%';
+WHERE industry IN ('Crypto Currency', 'CryptoCurrency');
 
-SELECT DISTINCT country, TRIM(TRAILING '.' from country)
-FROM layoffs_staging2
-ORDER BY 1;
+SELECT DISTINCT industry
+FROM world_layoffs.layoffs_staging2
+ORDER BY industry;
 
+SELECT *
+FROM world_layoffs.layoffs_staging2;
+
+-- In the Country column we have 2 different versions "United States" and "United States." with a period at the end.
+SELECT DISTINCT country
+FROM world_layoffs.layoffs_staging2
+ORDER BY country;
+
+-- Updating the table
 UPDATE layoffs_staging2
-SET country = TRIM(TRAILING '.' from country)
-WHERE country LIKE 'United States%';
+SET country = TRIM(TRAILING '.' FROM country);
 
-SELECT `date`
-FROM layoffs_staging2;
+-- Checking to see if it is fixed
+SELECT DISTINCT country
+FROM world_layoffs.layoffs_staging2
+ORDER BY country;
 
+-- Now, we are going to fix the date columns
+SELECT *
+FROM world_layoffs.layoffs_staging2;
+
+-- We use 'str to date' function to update the date field
 UPDATE layoffs_staging2
-SET `date` = str_to_date(`date`, '%m/%d/%Y');
+SET `date` = STR_TO_DATE(`date`, '%m/%d/%Y');
 
+-- We will now convert the data type 
 ALTER TABLE layoffs_staging2
 MODIFY COLUMN `date` DATE;
 
 SELECT *
-FROM layoffs_staging2
+FROM world_layoffs.layoffs_staging2;
+
+-- 3. Removing any unnecessary columns and rows
+
+SELECT *
+FROM world_layoffs.layoffs_staging2
+WHERE total_laid_off IS NULL;
+
+SELECT *
+FROM world_layoffs.layoffs_staging2
 WHERE total_laid_off IS NULL
 AND percentage_laid_off IS NULL;
 
-SELECT *
-FROM layoffs_staging2
-WHERE industry IS NULL 
-OR industry = '';
-
-UPDATE layoffs_staging2
-SET industry = NULL
-WHERE industry = '';
-
-
-
-SELECT t1.industry, t2.industry
-FROM layoffs_staging2 as t1
-JOIN layoffs_staging2 as t2
-	ON t1.company = t2.company
-WHERE (t1.industry IS NULL OR t1.industry = '')
-AND t2.industry IS NOT NULL;
-
-UPDATE layoffs_staging2 as t1
-JOIN layoffs_staging2 as t2
-	ON t1.company = t2.company
-SET t1.industry = t2.industry
-WHERE t1.industry IS NULL 
-AND t2.industry IS NOT NULL;
-
-SELECT *
-FROM layoffs_staging2
-WHERE company LIKE 'Bally%';
-
-SELECT *
-FROM layoffs_staging2
+-- Deleting data that we don't need
+DELETE FROM world_layoffs.layoffs_staging2
 WHERE total_laid_off IS NULL
 AND percentage_laid_off IS NULL;
 
-DELETE 
-FROM layoffs_staging2
-WHERE total_laid_off IS NULL
-AND percentage_laid_off IS NULL;
-
-SELECT *
-FROM layoffs_staging2;
+SELECT * 
+FROM world_layoffs.layoffs_staging2;
 
 ALTER TABLE layoffs_staging2
-DROP COLUMN row_num1;
+DROP COLUMN row_num;
 
-SELECT MAX(total_laid_off), MAX(percentage_laid_off)
-FROM layoffs_staging2;
-
-SELECT *
-FROM layoffs_staging2
-WHERE percentage_laid_off = 1
-ORDER BY funds_raised_millions DESC;
-
-SELECT company, sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY company 
-ORDER BY 2 DESC;
-
-SELECT MIN(`date`), MAX(`date`)
-FROM layoffs_staging2;
-
-SELECT country, sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY country 
-ORDER BY 2 DESC;
-
-SELECT *
-FROM layoffs_staging2;
-
-SELECT YEAR(`date`), sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY YEAR(`date`)
-ORDER BY 1 DESC;
-
-SELECT stage, sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY stage
-ORDER BY 2 DESC;
-
-SELECT company, sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY YEAR(`date`)
-ORDER BY 1 DESC;
-
-SELECT SUBSTRING(`date`,1,7) as `MONTH`, SUM(total_laid_off)
-FROM layoffs_staging2
-WHERE SUBSTRING(`date`,1,7) IS NOT NULL
-GROUP BY `MONTH`
-ORDER BY 1 ASC;
-
-WITH Rolling_Total AS
-(
-SELECT SUBSTRING(`date`,1,7) as `MONTH`, SUM(total_laid_off) as total_off
-FROM layoffs_staging2
-WHERE SUBSTRING(`date`,1,7) IS NOT NULL
-GROUP BY `MONTH`
-ORDER BY 1 ASC
-)
-SELECT `MONTH`,total_off, SUM(total_off) OVER(ORDER BY `MONTH`) as rolling_total
-FROM Rolling_Total;
-
-SELECT company, sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY company
-ORDER BY 2 DESC;
-
-SELECT company, YEAR(`date`), sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY company, YEAR(`date`)
-ORDER BY 3 DESC;
-
-WITH Company_Year (company, years, total_laid_off) AS
-(
-SELECT company, YEAR(`date`), sum(total_laid_off)
-FROM layoffs_staging2
-GROUP BY company, YEAR(`date`)
-), Company_Year_Rank as
-(SELECT *, 
-DENSE_RANK() OVER(PARTITION BY years ORDER BY total_laid_off DESC) as Ranking
-FROM Company_Year
-WHERE years IS NOT NULL
-)
-SELECT *
-FROM Company_Year_Rank
-WHERE Ranking <= 5;
-
-
+SELECT * 
+FROM world_layoffs.layoffs_staging2;
