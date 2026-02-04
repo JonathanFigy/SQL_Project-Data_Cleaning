@@ -1,4 +1,4 @@
-# SQL Data Cleaning Project
+# Tech Layoffs Data Cleaning Project (2019-Present)
 
 ## Project Overview
 This project focuses on cleaning, standardizing, and preparing a real-world tech layoffs dataset sourced from Kaggle: “Layoffs Dataset: Tech layoffs from COVID-19 (2019) to present.”
